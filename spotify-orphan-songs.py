@@ -4,7 +4,6 @@
 import sys
 import spotipy
 import spotipy.util as util
-from datetime import datetime
 
 sp = spotipy.Spotify()
 
@@ -26,6 +25,8 @@ def show_tracks(results):
 if token:
     sp = spotipy.Spotify(auth=token)
 
+    orphan_playlist_id = None
+
     #
     # Playlist songs
     #
@@ -35,7 +36,7 @@ if token:
     playlists = sp.user_playlists(username)
     for playlist in playlists['items']:
         if playlist['owner']['id'] == username:
-            if not playlist['name'].startswith('Orphan songs '):
+            if playlist['name'] != 'Orphan songs':
                 print("Scanning", playlist['name'], "-", playlist['tracks']['total'], "songs...")
                 results = sp.user_playlist(username, playlist['id'], fields="tracks,next")
                 tracks = results['tracks']
@@ -49,6 +50,9 @@ if token:
                         for item in tracks['items']:
                             track = item['track']
                             playlist_songs.add(track['uri'])
+
+            else:
+                orphan_playlist_id = playlist['id']
 
 
     print("Unique songs in playlists:", len(playlist_songs))
@@ -71,6 +75,8 @@ if token:
                 track = item['track']
                 library_songs.add(track['uri'])
 
+    print("Unique songs in library:", len(library_songs))
+
     #
     # Difference
     #
@@ -81,19 +87,28 @@ if token:
     # New playlist
     #
 
-    playlist_name = 'Orphan songs ' + datetime.today().isoformat()[:10]
-    print("Creating playlist:", playlist_name)
-    playlist = sp.user_playlist_create(username, playlist_name, public=True)
+    playlist_name = 'Orphan songs'
+    if not orphan_playlist_id:
+        print("Creating playlist:", playlist_name)
+        playlist = sp.user_playlist_create(username, playlist_name, public=True)
+        orphan_playlist_id = playlist['id']
+    else:
+        print("Updating playlist:", playlist_name)
+    
+    print(len(orphan_songs), "orphan songs")
 
     #
     # Add orphans to playlist
     #
 
-    print("Adding tracks to new playlist")
+    print("Adding/updating tracks in orphan playlist")
     orphan_songs_list = list(orphan_songs)
     for i in range(0, len(orphan_songs_list), 100):
         chunk = orphan_songs_list[i:i + 100]
-        results = sp.user_playlist_add_tracks(username, playlist['id'], chunk)
+        if i == 0:
+            results = sp.user_playlist_replace_tracks(username, orphan_playlist_id, chunk)
+        else:
+            results = sp.user_playlist_add_tracks(username, orphan_playlist_id, chunk)
 
 else:
     print("Can't get token for", username)
